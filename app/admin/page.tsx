@@ -126,70 +126,6 @@ export default function AdminPage() {
   const [selectedCompany, setSelectedCompany] = useState('all');
   const [selectedPosition, setSelectedPosition] = useState('all');
 
-  const setupUsersListener = useCallback(() => {
-    const q = query(collection(db, 'users'), orderBy('createdAt', 'desc'));
-    return onSnapshot(q, (snapshot) => {
-      const usersData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as User[];
-      setUsers(usersData);
-      
-      // Apply current search filter
-      if (pageState.searchQuery) {
-        const lowercaseQuery = pageState.searchQuery.toLowerCase();
-        const filtered = usersData.filter(user => {
-          const name = user.name?.toLowerCase() || '';
-          const email = user.email?.toLowerCase() || '';
-          return name.includes(lowercaseQuery) || email.includes(lowercaseQuery);
-        });
-        setFilteredUsers(filtered);
-      } else {
-        setFilteredUsers(usersData);
-      }
-    });
-  }, [pageState.searchQuery]);
-
-  useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged(async (user) => {
-      if (!user) {
-        router.push('/');
-      } else {
-        const userDoc = await getDoc(doc(db, 'users', user.uid));
-        
-        if (!userDoc.exists() || !userDoc.data().isAdmin) {
-          router.push('/candidate');
-        } else {
-          setUser(user);
-          setupUsersListener();
-        }
-      }
-      setLoading(false);
-    });
-
-    return () => unsubscribe();
-  }, [router, setupUsersListener]);
-
-  const updateApplicationCounts = useCallback(async () => {
-    try {
-      const updatedJobs = await Promise.all(
-        jobs.map(async (job) => {
-          const applicationsSnapshot = await getDocs(
-            query(collection(db, 'applications'), where('jobId', '==', job.id))
-          );
-          return {
-            ...job,
-            totalApplications: applicationsSnapshot.size
-          };
-        })
-      );
-      setJobs(updatedJobs);
-      setFilteredJobs(updatedJobs);
-    } catch (error) {
-      console.error('Error updating application counts:', error);
-    }
-  }, [jobs]);
-
   const setupRealtimeStats = useCallback(() => {
     // Cleanup previous listeners
     unsubscribeStats.forEach(unsubscribe => unsubscribe());
@@ -255,6 +191,71 @@ export default function AdminPage() {
       console.error('Error setting up real-time stats:', error);
     }
   }, [unsubscribeStats]);
+
+  const setupUsersListener = useCallback(() => {
+    const q = query(collection(db, 'users'), orderBy('createdAt', 'desc'));
+    return onSnapshot(q, (snapshot) => {
+      const usersData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as User[];
+      setUsers(usersData);
+      
+      // Apply current search filter
+      if (pageState.searchQuery) {
+        const lowercaseQuery = pageState.searchQuery.toLowerCase();
+        const filtered = usersData.filter(user => {
+          const name = user.name?.toLowerCase() || '';
+          const email = user.email?.toLowerCase() || '';
+          return name.includes(lowercaseQuery) || email.includes(lowercaseQuery);
+        });
+        setFilteredUsers(filtered);
+      } else {
+        setFilteredUsers(usersData);
+      }
+    });
+  }, [pageState.searchQuery]);
+
+  useEffect(() => {
+    const unsubscribe = auth.onAuthStateChanged(async (user) => {
+      if (!user) {
+        router.push('/');
+      } else {
+        const userDoc = await getDoc(doc(db, 'users', user.uid));
+        
+        if (!userDoc.exists() || !userDoc.data().isAdmin) {
+          router.push('/candidate');
+        } else {
+          setUser(user);
+          setupUsersListener();
+          setupRealtimeStats();
+        }
+      }
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, [router, setupUsersListener, setupRealtimeStats]);
+
+  const updateApplicationCounts = useCallback(async () => {
+    try {
+      const updatedJobs = await Promise.all(
+        jobs.map(async (job) => {
+          const applicationsSnapshot = await getDocs(
+            query(collection(db, 'applications'), where('jobId', '==', job.id))
+          );
+          return {
+            ...job,
+            totalApplications: applicationsSnapshot.size
+          };
+        })
+      );
+      setJobs(updatedJobs);
+      setFilteredJobs(updatedJobs);
+    } catch (error) {
+      console.error('Error updating application counts:', error);
+    }
+  }, [jobs]);
 
   const setupJobsListener = useCallback(() => {
     const q = query(collection(db, 'jobs'), orderBy('createdAt', 'desc'));
