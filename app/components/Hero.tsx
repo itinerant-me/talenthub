@@ -12,7 +12,12 @@ const verticals = [
   'SaaS', 'FinTech', 'AI/ML', 'Blockchain', 'Enterprise', 'Analytics', 'Cloud', 'Security'
 ];
 
-export default function Hero() {
+/* eslint-disable @typescript-eslint/no-unused-vars */
+interface HeroProps {
+  onSearch?: (query: string) => void;
+}
+
+export default function Hero({ onSearch }: HeroProps) {
   const router = useRouter();
 
   const handleSignIn = async () => {

@@ -9,14 +9,10 @@ import Footer from './components/Footer';
 export default function Home() {
   const [searchQuery, setSearchQuery] = useState('');
 
-  const handleSearch = (query: string) => {
-    setSearchQuery(query);
-  };
-
   return (
     <main className="min-h-screen bg-black">
       <Header />
-      <Hero />
+      <Hero onSearch={setSearchQuery} />
       <Jobs searchQuery={searchQuery} />
       <Footer />
     </main>
