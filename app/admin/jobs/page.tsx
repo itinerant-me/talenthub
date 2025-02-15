@@ -53,11 +53,9 @@ interface JobFormData {
   positionName: string;
   location: string;
   expMin: string;
-  expMax: string;
+  expMax?: string;
   techStack: string;
   domain: string;
-  description: string;
-  requiredSkills: string;
   numberOfPositions: string;
 }
 
@@ -83,8 +81,6 @@ export default function JobManagementPage() {
     expMax: '',
     techStack: '',
     domain: '',
-    description: '',
-    requiredSkills: '',
     numberOfPositions: ''
   });
   const [formErrors, setFormErrors] = useState<Partial<Record<keyof JobFormData, string>>>({});
@@ -136,6 +132,7 @@ export default function JobManagementPage() {
   useEffect(() => {
     if (!user) return;
 
+    // Set up real-time listener for jobs
     const q = query(
       collection(db, 'jobs'),
       orderBy('createdAt', 'desc')
@@ -146,45 +143,14 @@ export default function JobManagementPage() {
         id: doc.id,
         ...doc.data()
       })) as Job[];
+      
       setJobs(jobsData);
+      // Apply current filters to the new data
       applyFilters(jobsData, searchQuery, selectedCompany, selectedPosition);
-    }, (error) => {
-      console.error('Error fetching jobs:', error);
     });
 
     return () => unsubscribe();
   }, [user, applyFilters, searchQuery, selectedCompany, selectedPosition]);
-
-  useEffect(() => {
-    if (!jobs.length) return;
-
-    const fetchApplicationCounts = async () => {
-      const jobUpdates = await Promise.all(jobs.map(async (job) => {
-        const applicationsQuery = query(
-          collection(db, 'applications'),
-          where('jobId', '==', job.id)
-        );
-        const snapshot = await getDocs(applicationsQuery);
-        return {
-          jobId: job.id,
-          totalApplications: snapshot.size
-        };
-      }));
-
-      const updatedJobs = jobs.map(job => {
-        const update = jobUpdates.find(u => u.jobId === job.id);
-        return {
-          ...job,
-          totalApplications: update?.totalApplications || 0
-        };
-      });
-
-      setJobs(updatedJobs);
-      applyFilters(updatedJobs, searchQuery, selectedCompany, selectedPosition);
-    };
-
-    fetchApplicationCounts();
-  }, [jobs, applyFilters, searchQuery, selectedCompany, selectedPosition]);
 
   const handleSearch = (query: string) => {
     setSearchQuery(query);
@@ -218,8 +184,6 @@ export default function JobManagementPage() {
     if (!jobFormData.expMin) errors.expMin = 'Minimum experience is required';
     if (!jobFormData.domain) errors.domain = 'Domain is required';
     if (!jobFormData.techStack) errors.techStack = 'Tech stack is required';
-    if (!jobFormData.description) errors.description = 'Description is required';
-    if (!jobFormData.requiredSkills) errors.requiredSkills = 'Required skills are required';
     if (!jobFormData.numberOfPositions) errors.numberOfPositions = 'Number of positions is required';
 
     setFormErrors(errors);
@@ -231,18 +195,37 @@ export default function JobManagementPage() {
     
     setSubmitting(true);
     try {
+      // Create the job
       const jobData = {
-        ...jobFormData,
+        clientName: jobFormData.clientName,
+        positionName: jobFormData.positionName,
+        location: jobFormData.location,
         expMin: parseInt(jobFormData.expMin),
         expMax: jobFormData.expMax ? parseInt(jobFormData.expMax) : null,
         techStack: jobFormData.techStack.split(',').map(skill => skill.trim()),
-        requiredSkills: jobFormData.requiredSkills.split(',').map(skill => skill.trim()),
+        domain: jobFormData.domain,
+        numberOfPositions: parseInt(jobFormData.numberOfPositions),
         status: 'active' as const,
         createdAt: new Date().toISOString(),
         totalApplications: 0
       };
 
-      await addDoc(collection(db, 'jobs'), jobData);
+      // Add job to Firestore
+      const jobRef = await addDoc(collection(db, 'jobs'), jobData);
+
+      // Log activity
+      await addDoc(collection(db, 'activities'), {
+        type: 'new_job',
+        message: `Added new position: ${jobData.positionName} at ${jobData.clientName}`,
+        timestamp: new Date().toISOString(),
+        data: {
+          jobId: jobRef.id,
+          positionName: jobData.positionName,
+          clientName: jobData.clientName
+        }
+      });
+
+      // Close modal and reset form
       onAddJobClose();
       setJobFormData({
         clientName: '',
@@ -252,8 +235,6 @@ export default function JobManagementPage() {
         expMax: '',
         techStack: '',
         domain: '',
-        description: '',
-        requiredSkills: '',
         numberOfPositions: ''
       });
     } catch (error) {
@@ -619,6 +600,7 @@ export default function JobManagementPage() {
                 min="1"
                 value={jobFormData.numberOfPositions}
                 onChange={(e) => setJobFormData({ ...jobFormData, numberOfPositions: e.target.value })}
+                errorMessage={formErrors.numberOfPositions}
                 classNames={{
                   label: "text-white/60",
                   input: "text-white",
@@ -692,13 +674,13 @@ export default function JobManagementPage() {
             <Button
               color="danger"
               variant="light"
-              onPress={onAddJobClose}
+              onClick={onAddJobClose}
             >
               Cancel
             </Button>
             <Button
               color="primary"
-              onPress={handleAddJob}
+              onClick={handleAddJob}
               isLoading={submitting}
             >
               Add Job
