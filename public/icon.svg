@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="512" height="512" rx="128" fill="#000000"/>
+  
+  <!-- Abstract talent representation -->
+  <g filter="url(#glow)">
+    <!-- Main circle (head) -->
+    <circle cx="256" cy="192" r="64" fill="#FF3B3B"/>
+    
+    <!-- Body shape -->
+    <path d="M256 272C192 272 144 320 144 384H368C368 320 320 272 256 272Z" fill="#FF3B3B"/>
+    
+    <!-- Abstract connection lines representing networking/growth -->
+    <path d="M144 384C144 384 176 288 256 288C336 288 368 384 368 384" stroke="#FF3B3B" stroke-width="8"/>
+    
+    <!-- Abstract side elements suggesting multiple people/community -->
+    <circle cx="160" cy="208" r="32" fill="#FF3B3B" fill-opacity="0.5"/>
+    <circle cx="352" cy="208" r="32" fill="#FF3B3B" fill-opacity="0.5"/>
+  </g>
+
+  <!-- Lighting effects -->
+  <g filter="url(#lighting)">
+    <circle cx="256" cy="192" r="64" fill="url(#headGradient)" fill-opacity="0.4"/>
+    <path d="M256 272C192 272 144 320 144 384H368C368 320 320 272 256 272Z" fill="url(#bodyGradient)" fill-opacity="0.3"/>
+  </g>
+
+  <!-- Definitions for filters and gradients -->
+  <defs>
+    <!-- Glow effect -->
+    <filter id="glow" x="100" y="100" width="312" height="312" filterUnits="userSpaceOnUse">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+
+    <!-- Lighting effect -->
+    <filter id="lighting" x="120" y="120" width="272" height="272" filterUnits="userSpaceOnUse">
+      <feGaussianBlur stdDeviation="4"/>
+      <feOffset dy="2"/>
+    </filter>
+
+    <!-- Gradients -->
+    <radialGradient id="headGradient" cx="256" cy="192" r="64" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="white"/>
+      <stop offset="1" stop-color="white" stop-opacity="0"/>
+    </radialGradient>
+
+    <linearGradient id="bodyGradient" x1="256" y1="272" x2="256" y2="384" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="white"/>
+      <stop offset="1" stop-color="white" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+</svg> 
