@@ -138,15 +138,30 @@ export default function JobManagementPage() {
       orderBy('createdAt', 'desc')
     );
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    const unsubscribe = onSnapshot(q, async (snapshot) => {
       const jobsData = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       })) as Job[];
+
+      // Get application counts for each job
+      const jobsWithApplications = await Promise.all(
+        jobsData.map(async (job) => {
+          const applicationsQuery = query(
+            collection(db, 'applications'),
+            where('jobId', '==', job.id)
+          );
+          const applicationsSnapshot = await getDocs(applicationsQuery);
+          return {
+            ...job,
+            totalApplications: applicationsSnapshot.size
+          };
+        })
+      );
       
-      setJobs(jobsData);
+      setJobs(jobsWithApplications);
       // Apply current filters to the new data
-      applyFilters(jobsData, searchQuery, selectedCompany, selectedPosition);
+      applyFilters(jobsWithApplications, searchQuery, selectedCompany, selectedPosition);
     });
 
     return () => unsubscribe();
