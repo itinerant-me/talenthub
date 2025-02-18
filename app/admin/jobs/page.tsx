@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { auth, db } from '../../firebase/config';
 import { signOut } from 'firebase/auth';
@@ -31,6 +31,7 @@ import {
 import { collection, query, orderBy, onSnapshot, doc, updateDoc, deleteDoc, where, addDoc, getDocs } from 'firebase/firestore';
 import Image from 'next/image';
 import { User } from '../../types';
+import React from 'react';
 
 interface Job {
   id: string;
@@ -38,14 +39,17 @@ interface Job {
   positionName: string;
   location: string;
   expMin: number;
-  expMax: number;
+  expMax: number | null;
   techStack: string[];
   domain: string;
-  status: 'active' | 'inactive';
+  status: 'active' | 'inactive' | 'filled';
   totalApplications: number;
   createdAt: string;
   description: string;
   requiredSkills: string[];
+  numberOfPositions: number;
+  closureReason?: string;
+  closedAt?: string;
 }
 
 interface JobFormData {
@@ -86,6 +90,10 @@ export default function JobManagementPage() {
   const [formErrors, setFormErrors] = useState<Partial<Record<keyof JobFormData, string>>>({});
   const [submitting, setSubmitting] = useState(false);
   const [avatarError, setAvatarError] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editingJobId, setEditingJobId] = useState<string | null>(null);
+  const [jobToClose, setJobToClose] = useState<Job | null>(null);
+  const { isOpen: isCloseRoleOpen, onOpen: onCloseRoleOpen, onClose: onCloseRoleClose } = useDisclosure();
 
   const applyFilters = useCallback((
     jobsData: Job[],
@@ -115,6 +123,19 @@ export default function JobManagementPage() {
 
     setFilteredJobs(filtered);
   }, []);
+
+  const pages = Math.ceil(filteredJobs.length / rowsPerPage);
+  
+  // Sort the filtered jobs by application count before pagination
+  const sortedFilteredJobs = useMemo(() => {
+    return [...filteredJobs].sort((a, b) => b.totalApplications - a.totalApplications);
+  }, [filteredJobs]);
+
+  // Get paginated items after sorting
+  const items = sortedFilteredJobs.slice((page - 1) * rowsPerPage, page * rowsPerPage);
+
+  // Remove the old sortedItems logic since we're pre-sorting
+  const sortedItems = items;
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged(async (user) => {
@@ -205,12 +226,43 @@ export default function JobManagementPage() {
     return Object.keys(errors).length === 0;
   };
 
-  const handleAddJob = async () => {
+  const resetForm = () => {
+    setJobFormData({
+      clientName: '',
+      positionName: '',
+      location: '',
+      expMin: '',
+      expMax: '',
+      techStack: '',
+      domain: '',
+      numberOfPositions: ''
+    });
+    setFormErrors({});
+    setIsEditing(false);
+    setEditingJobId(null);
+  };
+
+  const handleEditJob = (job: Job) => {
+    setIsEditing(true);
+    setEditingJobId(job.id);
+    setJobFormData({
+      clientName: job.clientName,
+      positionName: job.positionName,
+      location: job.location,
+      expMin: job.expMin.toString(),
+      expMax: job.expMax?.toString() || '',
+      techStack: job.techStack.join(', '),
+      domain: job.domain,
+      numberOfPositions: job.numberOfPositions.toString()
+    });
+    onAddJobOpen();
+  };
+
+  const handleAddOrUpdateJob = async () => {
     if (!validateForm()) return;
     
     setSubmitting(true);
     try {
-      // Create the job
       const jobData = {
         clientName: jobFormData.clientName,
         positionName: jobFormData.positionName,
@@ -225,44 +277,54 @@ export default function JobManagementPage() {
         totalApplications: 0
       };
 
-      // Add job to Firestore
-      const jobRef = await addDoc(collection(db, 'jobs'), jobData);
+      if (isEditing && editingJobId) {
+        // Update existing job
+        await updateDoc(doc(db, 'jobs', editingJobId), jobData);
 
-      // Log activity
-      await addDoc(collection(db, 'activities'), {
-        type: 'new_job',
-        message: `Added new position: ${jobData.positionName} at ${jobData.clientName}`,
-        timestamp: new Date().toISOString(),
-        data: {
-          jobId: jobRef.id,
-          positionName: jobData.positionName,
-          clientName: jobData.clientName
-        }
-      });
+        // Log activity for edit
+        await addDoc(collection(db, 'activities'), {
+          type: 'new_job',
+          message: `Updated position: ${jobData.positionName} at ${jobData.clientName}`,
+          timestamp: new Date().toISOString(),
+          data: {
+            jobId: editingJobId,
+            positionName: jobData.positionName,
+            clientName: jobData.clientName
+          }
+        });
+      } else {
+        // Add new job
+        const jobRef = await addDoc(collection(db, 'jobs'), jobData);
+
+        // Log activity for new job
+        await addDoc(collection(db, 'activities'), {
+          type: 'new_job',
+          message: `Added new position: ${jobData.positionName} at ${jobData.clientName}`,
+          timestamp: new Date().toISOString(),
+          data: {
+            jobId: jobRef.id,
+            positionName: jobData.positionName,
+            clientName: jobData.clientName
+          }
+        });
+      }
 
       // Close modal and reset form
       onAddJobClose();
-      setJobFormData({
-        clientName: '',
-        positionName: '',
-        location: '',
-        expMin: '',
-        expMax: '',
-        techStack: '',
-        domain: '',
-        numberOfPositions: ''
-      });
+      resetForm();
     } catch (error) {
-      console.error('Error adding job:', error);
+      console.error('Error saving job:', error);
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleStatusToggle = async (jobId: string, currentStatus: 'active' | 'inactive') => {
+  const handleStatusToggle = async (jobId: string, currentStatus: 'active' | 'inactive' | 'filled') => {
     try {
+      // Only toggle between active and inactive
+      const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
       await updateDoc(doc(db, 'jobs', jobId), {
-        status: currentStatus === 'active' ? 'inactive' : 'active'
+        status: newStatus
       });
     } catch (error) {
       console.error('Error updating job status:', error);
@@ -309,6 +371,35 @@ export default function JobManagementPage() {
     }
   };
 
+  const handleCloseRole = async (reason: 'filled_talenthub' | 'filled_external' | 'closed_by_company') => {
+    if (!jobToClose) return;
+    
+    try {
+      await updateDoc(doc(db, 'jobs', jobToClose.id), {
+        status: 'filled',
+        closureReason: reason,
+        closedAt: new Date().toISOString()
+      });
+
+      // Log activity
+      await addDoc(collection(db, 'activities'), {
+        type: 'job_closed',
+        message: `Position closed: ${jobToClose.positionName} (${reason.replace(/_/g, ' ')})`,
+        timestamp: new Date().toISOString(),
+        data: {
+          jobId: jobToClose.id,
+          positionName: jobToClose.positionName,
+          reason: reason
+        }
+      });
+
+      onCloseRoleClose();
+      setJobToClose(null);
+    } catch (error) {
+      console.error('Error closing role:', error);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
@@ -316,9 +407,6 @@ export default function JobManagementPage() {
       </div>
     );
   }
-
-  const pages = Math.ceil(filteredJobs.length / rowsPerPage);
-  const items = filteredJobs.slice((page - 1) * rowsPerPage, page * rowsPerPage);
 
   return (
     <div className="min-h-screen bg-black">
@@ -475,7 +563,7 @@ export default function JobManagementPage() {
               <div className="text-white/60">No jobs found</div>
             }
           >
-            {items.map((job) => (
+            {sortedItems.map((job) => (
               <TableRow key={job.id}>
                 <TableCell>
                   <div className="text-white font-medium">{job.positionName}</div>
@@ -521,6 +609,8 @@ export default function JobManagementPage() {
                     className={
                       job.status === 'active'
                         ? 'bg-green-500/20 text-green-500'
+                        : job.status === 'filled'
+                        ? 'bg-yellow-500/20 text-yellow-500'
                         : 'bg-red-500/20 text-red-500'
                     }
                   >
@@ -542,16 +632,33 @@ export default function JobManagementPage() {
                       className="bg-black/90 border border-white/10"
                     >
                       <DropdownItem
+                        key="edit"
+                        className="text-white"
+                        onPress={() => handleEditJob(job)}
+                      >
+                        Edit
+                      </DropdownItem>
+                      <DropdownItem
                         key="toggle"
                         className="text-white"
-                        onClick={() => handleStatusToggle(job.id, job.status)}
+                        onPress={() => handleStatusToggle(job.id, job.status)}
                       >
                         {job.status === 'active' ? 'Deactivate' : 'Activate'}
                       </DropdownItem>
                       <DropdownItem
+                        key="close"
+                        className="text-yellow-500"
+                        onPress={() => {
+                          setJobToClose(job);
+                          onCloseRoleOpen();
+                        }}
+                      >
+                        Close Role
+                      </DropdownItem>
+                      <DropdownItem
                         key="delete"
                         className="text-red-500"
-                        onClick={() => {
+                        onPress={() => {
                           setJobToDelete(job);
                           onDeleteOpen();
                         }}
@@ -581,7 +688,7 @@ export default function JobManagementPage() {
       >
         <ModalContent>
           <ModalHeader className="flex flex-col gap-1">
-            <h2 className="text-xl font-bold text-white">Add New Job</h2>
+            <h2 className="text-xl font-bold text-white">{isEditing ? 'Edit Job' : 'Add New Job'}</h2>
             <p className="text-sm text-white/60">Enter the job details below</p>
           </ModalHeader>
           <ModalBody>
@@ -689,16 +796,19 @@ export default function JobManagementPage() {
             <Button
               color="danger"
               variant="light"
-              onClick={onAddJobClose}
+              onClick={() => {
+                onAddJobClose();
+                resetForm();
+              }}
             >
               Cancel
             </Button>
             <Button
               color="primary"
-              onClick={handleAddJob}
+              onClick={handleAddOrUpdateJob}
               isLoading={submitting}
             >
-              Add Job
+              {isEditing ? 'Save Changes' : 'Add Job'}
             </Button>
           </ModalFooter>
         </ModalContent>
@@ -733,6 +843,52 @@ export default function JobManagementPage() {
               onPress={handleDeleteJob}
             >
               Delete
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+
+      {/* Close Role Modal */}
+      <Modal
+        isOpen={isCloseRoleOpen}
+        onOpenChange={onCloseRoleClose}
+        size="sm"
+        classNames={{
+          base: "bg-black/90 border border-white/10",
+        }}
+      >
+        <ModalContent>
+          <ModalHeader>Close Role</ModalHeader>
+          <ModalBody>
+            <div className="space-y-4">
+              <p className="text-white/60">Select the reason for closing this role:</p>
+              <Button
+                className="w-full bg-green-500/20 text-green-400 hover:bg-green-500/30"
+                onPress={() => handleCloseRole('filled_talenthub')}
+              >
+                Filled from TalentHub
+              </Button>
+              <Button
+                className="w-full bg-blue-500/20 text-blue-400 hover:bg-blue-500/30"
+                onPress={() => handleCloseRole('filled_external')}
+              >
+                Filled Externally
+              </Button>
+              <Button
+                className="w-full bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30"
+                onPress={() => handleCloseRole('closed_by_company')}
+              >
+                Req Closed by Company
+              </Button>
+            </div>
+          </ModalBody>
+          <ModalFooter>
+            <Button
+              color="danger"
+              variant="light"
+              onPress={onCloseRoleClose}
+            >
+              Cancel
             </Button>
           </ModalFooter>
         </ModalContent>

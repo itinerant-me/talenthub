@@ -19,10 +19,12 @@ interface Job {
   expMax: number;
   techStack: string[];
   domain: string;
-  status: 'active' | 'inactive';
+  status: 'active' | 'inactive' | 'filled';
   totalApplications: number;
   createdAt: string;
   numberOfPositions: number;
+  closureReason?: string;
+  closedAt?: string;
 }
 
 interface JobsProps {
@@ -72,7 +74,7 @@ export default function Jobs({ searchQuery: externalSearchQuery, variant = 'land
     // Set up real-time listener for active jobs
     const jobsQuery = query(
       collection(db, 'jobs'),
-      where('status', '==', 'active'),
+      where('status', 'in', ['active', 'filled']),
       orderBy('createdAt', 'desc')
     );
 
@@ -211,6 +213,48 @@ export default function Jobs({ searchQuery: externalSearchQuery, variant = 'land
     } finally {
       setApplying(null);
     }
+  };
+
+  const getPostTimeChip = (job: Job) => {
+    if (job.status === 'filled') {
+      return (
+        <Chip
+          className="bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 absolute top-4 right-4"
+          size="sm"
+          radius="full"
+        >
+          Filled
+        </Chip>
+      );
+    }
+
+    const now = new Date();
+    const postDate = new Date(job.createdAt);
+    const diffInHours = Math.floor((now.getTime() - postDate.getTime()) / (1000 * 60 * 60));
+    
+    if (diffInHours < 24) {
+      return (
+        <Chip
+          className="bg-green-500/20 text-green-400 border border-green-500/30 absolute top-4 right-4"
+          size="sm"
+          radius="full"
+        >
+          NEW
+        </Chip>
+      );
+    } else if (diffInHours < 120) { // 5 days
+      const days = Math.floor(diffInHours / 24);
+      return (
+        <Chip
+          className="bg-white/5 text-white/80 border border-white/10 absolute top-4 right-4"
+          size="sm"
+          radius="full"
+        >
+          {days} {days === 1 ? 'day' : 'days'} ago
+        </Chip>
+      );
+    }
+    return null;
   };
 
   return (
@@ -363,6 +407,9 @@ export default function Jobs({ searchQuery: externalSearchQuery, variant = 'land
                     isPressable={false}
                   >
                     <CardBody className="p-4 md:p-6 flex flex-col h-full relative">
+                      {/* Add the time chip here */}
+                      {getPostTimeChip(job)}
+                      
                       {/* Background Gradient Effect */}
                       <div className="absolute inset-0 bg-gradient-to-br from-red-500/0 via-transparent to-red-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
 
@@ -431,16 +478,22 @@ export default function Jobs({ searchQuery: externalSearchQuery, variant = 'land
                       {/* Button Section */}
                       <Button
                         className={`w-full ${
-                          appliedJobs[job.id]
+                          job.status === 'filled'
+                            ? 'bg-yellow-500/20 text-yellow-400 cursor-not-allowed'
+                            : appliedJobs[job.id]
                             ? 'bg-green-500/20 text-green-400 cursor-not-allowed'
                             : 'bg-gradient-to-r from-black/80 to-black/90 text-white hover:bg-red-500 hover:from-red-500 hover:to-red-600'
                         } transition-all duration-300 h-10 md:h-12 mt-3 md:mt-4 shadow-lg shadow-black/5 text-sm md:text-base`}
                         radius="full"
-                        isDisabled={appliedJobs[job.id]}
+                        isDisabled={job.status === 'filled' || appliedJobs[job.id]}
                         isLoading={applying === job.id}
                         onClick={() => handleApply(job.id)}
                         endContent={
-                          appliedJobs[job.id] ? (
+                          job.status === 'filled' ? (
+                            <svg className="w-3.5 md:w-4 h-3.5 md:h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                          ) : appliedJobs[job.id] ? (
                             <svg className="w-3.5 md:w-4 h-3.5 md:h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                             </svg>
@@ -451,7 +504,7 @@ export default function Jobs({ searchQuery: externalSearchQuery, variant = 'land
                           )
                         }
                       >
-                        {appliedJobs[job.id] ? 'Already Applied' : 'Express Interest'}
+                        {job.status === 'filled' ? 'Position Filled' : appliedJobs[job.id] ? 'Already Applied' : 'Express Interest'}
                       </Button>
                     </CardBody>
                   </Card>
