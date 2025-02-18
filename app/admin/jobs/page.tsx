@@ -321,7 +321,8 @@ export default function JobManagementPage() {
 
   const handleStatusToggle = async (jobId: string, currentStatus: 'active' | 'inactive' | 'filled') => {
     try {
-      // Only toggle between active and inactive
+      // Only toggle between active and inactive, don't affect filled status
+      if (currentStatus === 'filled') return;
       const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
       await updateDoc(doc(db, 'jobs', jobId), {
         status: newStatus
@@ -641,6 +642,7 @@ export default function JobManagementPage() {
                       <DropdownItem
                         key="toggle"
                         className="text-white"
+                        isDisabled={job.status === 'filled'}
                         onPress={() => handleStatusToggle(job.id, job.status)}
                       >
                         {job.status === 'active' ? 'Deactivate' : 'Activate'}
@@ -648,6 +650,7 @@ export default function JobManagementPage() {
                       <DropdownItem
                         key="close"
                         className="text-yellow-500"
+                        isDisabled={job.status === 'filled'}
                         onPress={() => {
                           setJobToClose(job);
                           onCloseRoleOpen();
